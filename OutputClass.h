@@ -6,25 +6,41 @@
 using namespace std;
 
 class OutputClass {
+    private:
+        static std::string get_ip_str (struct sockaddr_in& sock) {
+            // Convert ip address back to string
+            char ip_buf[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &(sock.sin_addr), ip_buf, INET_ADDRSTRLEN);
+            return std::string(ip_buf);
+        }
+
+        static std::string get_port_str (struct sockaddr_in& sock) {
+            return std::to_string(ntohs(sock.sin_port));
+        }
+
     public:
+        // Output internal error
         static void out_err_intern (string msg) {
-            cerr << string("ERROR: " + msg + "\n").c_str();
+            cerr << string("ERR: " + msg) << endl;
         }
-
-        static void out_err_server (string display_name, string msg) {
-            cerr << string("ERROR FROM " + display_name + ": " + msg + "\n").c_str();
+        // Output received message from client
+        static void out_recv_msg (struct sockaddr_in& sock, std::string msg_type) {
+            cout << string("RECV: " + get_ip_str(sock) + ":" + get_port_str(sock) + "|" + msg_type) << endl;
         }
-
-        static void out_msg (string display_name, string msg) {
-            cout << string(display_name + ": " + msg + "\n").c_str();
+        // Output sent message to client
+        static void out_send_msg (struct sockaddr_in& sock, std::string msg_type) {
+            cout << string("SENT: " + get_ip_str(sock) + ":" + get_port_str(sock) + "|" + msg_type) << endl;
         }
-
-        static void out_reply (bool result, string reason) {
-            cout << string(((result) ? "Success: " : "Failure: ") + reason + "\n").c_str();
-        }
-
+        // Output help about how to run the program
         static void out_help () {
-            cout << std::string("Help text: \n Use -t to set type [tcp/udp],\n -s for providing IPv4 address,\n -p for specifying port,\n -d for UDP timeout\n -r for UDP retransmissions count \n").c_str();
+            std::string help_text;
+            help_text += "Help text:\n";
+            help_text += "  -l IP address where server is listening\n";
+            help_text += "  -p for specifying port\n";
+            help_text += "  -d for UDP timeout [ms]\n";
+            help_text += "  -r for UDP retransmissions count";
+            // Output to stdout
+            cout << help_text << endl;
         }
 };
 

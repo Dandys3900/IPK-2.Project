@@ -1,8 +1,8 @@
 CXX := g++
-CXXFLAGS := -std=c++20 -Wall -Wextra
-SRCS := main.cpp UDPClass.cpp TCPClass.cpp
+CXXFLAGS := -std=c++20 -Wall -Wextra -g
+SRCS := main.cpp ServerClass.cpp UDPHelper.cpp TCPHelper.cpp
 OBJS := $(SRCS:.cpp=.o)
-EXE := ipk24chat-client
+EXE := ipk24chat-server
 
 $(EXE): $(SRCS)
 	$(CXX) $(CXXFLAGS) $(SRCS) -o $(EXE)
