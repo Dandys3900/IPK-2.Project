@@ -46,11 +46,8 @@ void Server::create_client (CON_TYPE type, int socket, struct sockaddr_in client
         .sock_str      = client_addr,
         .processed_msgs = std::vector<uint16_t>()
     };
-
-    // Add user to server vector of clients
-    this->clients.push_back(new_client);
     // Start client thread
-    this->client_threads.emplace_back(&Server::handle_client, this, std::ref(this->clients.back()));
+    this->client_threads.emplace_back(&Server::handle_client, this, new_client);
 }
 /***********************************************************************************/
 ServerChannel Server::create_channel (std::string channel_id) {
@@ -58,8 +55,6 @@ ServerChannel Server::create_channel (std::string channel_id) {
         .channel_name = channel_id,
         .clients = std::vector<ServerClient>()
     };
-    // Add new channel to channel vector
-    this->channels.push_back(new_channel);
     // Return constructed channel
     return new_channel;
 }
@@ -75,12 +70,12 @@ auto Server::get_channel (std::string channel_id) {
 auto Server::get_client (std::string user_name, std::vector<ServerClient>& pool) {
     // Try to find the client
     auto client = std::find_if(pool.begin(), pool.end(), [&] (const ServerClient& c) {
-        return c.user_name == user_name;
+            return c.user_name == user_name;
     });
     return client;
 }
 
-void Server::remove_from_channel (ServerClient& ending_client) {
+void Server::remove_from_channel (ServerClient ending_client) {
     // Get channel matching user joined channels name
     auto match_channel = get_channel(ending_client.client_channel);
     if (match_channel == this->channels.end())
@@ -96,7 +91,7 @@ void Server::remove_from_channel (ServerClient& ending_client) {
     broadcast_msg(*match_channel, std::string(ending_client.user_name + " has " + "left " + match_channel->channel_name), ending_client.user_name);
 }
 
-void Server::remove_client (ServerClient& ending_client) {
+void Server::remove_client (ServerClient ending_client) {
     // Remove from server clients vector
     auto toerase_client = get_client(ending_client.user_name, this->clients);
     if (toerase_client == this->clients.end())
@@ -116,14 +111,17 @@ void Server::add_to_channel (std::string channel_id, ServerClient& new_client) {
 
     // Check if channel found - add user
     if (channel != this->channels.end()) {
-        // Remove from previous server
-        channel->clients.push_back(new_client);
+        std::cout << "Channel found" << std::endl;
         // Notify other server clients this user joined
         broadcast_msg(*channel, std::string(new_client.user_name + " has " + "joined " + channel->channel_name), new_client.user_name);
+        // Add to channel
+        channel->clients.push_back(new_client);
     }
     else { // Channel not found, create it
+        std::cout << "Creating new channel: " << channel_id << std::endl;
         ServerChannel new_channel = create_channel(channel_id);
         new_channel.clients.push_back(new_client);
+        // Add new channel to channel vector
         this->channels.push_back(new_channel);
     }
 
@@ -143,7 +141,14 @@ void Server::session_end (ServerClient& ending_client) {
     remove_client(ending_client);
 }
 /***********************************************************************************/
-void Server::bind_connection (CON_TYPE type) {
+void Server::bind_connection (int socket) {
+    struct sockaddr* addr = (struct sockaddr*)&this->server_addr;
+    // Bind to given socket
+    if (bind(socket, addr, sizeof(this->server_addr)) < 0)
+        throw std::logic_error("Binding failed");
+}
+/***********************************************************************************/
+void Server::start_server () {
     // Make sure everything is reset
     memset(&(this->server_addr), 0, sizeof(this->server_addr));
     // Set domain
@@ -153,22 +158,15 @@ void Server::bind_connection (CON_TYPE type) {
     // Set port number
     (this->server_addr).sin_port = htons(this->port);
 
-    struct sockaddr* addr = (struct sockaddr*)&this->server_addr;
-    // Bind to given socket
-    if (bind(((type == TCP) ? this->main_tcp_socket : this->main_udp_socket), addr, sizeof(this->server_addr)) < 0)
-        throw std::logic_error("Binding failed");
-}
-/***********************************************************************************/
-void Server::start_server () {
     //************* UDP Connection *************//
-    /*if ((this->main_udp_socket = socket(AF_INET, SOCK_DGRAM, 0)) <= 0)
+    if ((this->main_udp_socket = socket(AF_INET, SOCK_DGRAM, 0)) <= 0)
         throw std::logic_error("UDP socket creation failed");
 
     // Do binding for UDP
-    bind_connection(UDP);
+    bind_connection(this->main_udp_socket);
 
     // Set timeout for UDP socket
-    set_socket_timeout(this->main_udp_socket, this->timeout);*/
+    set_socket_timeout(this->main_udp_socket, this->timeout);
 
     //************* TCP Connection *************//
     if ((this->main_tcp_socket = socket(AF_INET, SOCK_STREAM, 0)) <= 0)
@@ -178,7 +176,7 @@ void Server::start_server () {
     setsockopt(this->main_tcp_socket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable));
 
     // Do binding for TCP
-    bind_connection(TCP);
+    bind_connection(this->main_tcp_socket);
 
     // Listen for TCP messages
     if (listen(this->main_tcp_socket, MAX_WAITING_CONNS) < 0)
@@ -191,10 +189,16 @@ void Server::start_server () {
 void Server::stop_server () {
     // Stop accepting new clients
     this->accept_new = false;
+    // Make copy of all server clients and delete original vector to avoid sending broadcasts to other users
+    std::vector<ServerClient> copy_clients = this->clients;
+    this->clients.clear();
 
-    // Distribute BYE message to all connected clients when
-    for (auto& client : this->clients)
+    // Distribute BYE message to all connected clients when stopping the server
+    for (auto& client : copy_clients) {
+        // Clear clients queue
+        client.msg_queue = {};
         send_bye(client);
+    }
     // Wait for all clients threads to finish
     for (auto& thread : this->client_threads)
         thread.join();
@@ -241,7 +245,6 @@ void Server::accept_new_clients () {
                     OutputClass::out_err_intern("Error while accepting TCP client");
                 break;
             }
-
             // Create new client
             create_client(TCP, client_socket, client_addr);
         }
@@ -254,7 +257,6 @@ void Server::accept_new_clients () {
                 OutputClass::out_err_intern("Creation of UDP socket failed");
                 continue;
             }
-
             // Create new client
             create_client(UDP, client_socket, this->server_addr);
         }*/
@@ -272,11 +274,15 @@ void Server::set_socket_timeout (int socket_id, uint16_t timeout) {
 }
 /***********************************************************************************/
 void Server::broadcast_msg (ServerChannel& target, std::string msg, std::string sender) {
+    std::cout << "Broadcasting msg: " << msg << std::endl;
     // Distribute this message to all clients in given channel
     for (auto& client : target.clients) {
+        std::cout << "member of " << target.channel_name << " : " << client.user_name << std::endl;
         // Avoid sending the message to the sender
-        if (client.user_name != sender)
+        if (client.user_name != sender) {
+            std::cout << "Broadcast msg sending to: " << client.user_name << " - " << msg << std::endl;
             send_msg(client, target.channel_name, msg);
+        }
     }
 }
 /***********************************************************************************/
@@ -365,18 +371,24 @@ void Server::send_bye (ServerClient& to_client) {
 */
 /***********************************************************************************/
 void Server::send_message (ServerClient& to_client, DataStruct& data) {
-    // Check if message content is valid
-    if (!check_valid(data)) {
-        OutputClass::out_err_intern("Invalid message content, wont send");
-        return;
+    DataStruct to_send;
+    {
+        std::lock_guard<std::mutex> lock(this->send_mutex);
+        // Check if message content is valid
+        if (!check_valid(data)) {
+            OutputClass::out_err_intern("Invalid message content, wont send");
+            return;
+        }
+        // Add message to client queue (recon attempts are 0 for TCP obviously)
+        to_client.msg_queue.push({data, ((to_client.con_type == UDP) ? (this->recon_attempts + 1) : 0)});
+        // Get front message to send
+        to_send = to_client.msg_queue.front().first;
     }
-    // Add message to client queue (recon attempts are 0 for TCP obviously)
-    to_client.msg_queue.push({data, ((to_client.con_type == UDP) ? (this->recon_attempts + 1) : 0)});
-    // Get front message to send
-    auto to_send = to_client.msg_queue.front();
+    send_data(to_client, to_send);
 }
 
 void Server::send_data (ServerClient& to_client, DataStruct& data) {
+    std::lock_guard<std::mutex> lock(this->send_mutex);
     // Prepare data to send
     ssize_t bytes_send;
     const char* out_buffer = NULL;
@@ -434,12 +446,12 @@ std::vector<DataStruct> Server::handle_udp_recv (ServerClient& client) {
     socklen_t sock_len = sizeof(client.sock_str);
     DataStruct retData;
 
-    while (!client.stop_thread) {
+    while (!client.stop_thread && this->accept_new) {
         // Receive message from client
         ssize_t bytes_received =
             recvfrom(client.client_socket, (char*)in_buffer, MAXLENGTH, 0, (struct sockaddr*)&(client.sock_str), &sock_len);
         // Stop receiving when requested
-        if (client.stop_thread)
+        if (client.stop_thread || !this->accept_new)
             break;
 
         // Check for number of received bytes
@@ -560,20 +572,17 @@ std::vector<DataStruct> Server::handle_tcp_recv (ServerClient& client) {
     DataStruct retData;
     std::vector<DataStruct> ret_vec;
 
-    while (!client.stop_thread) {
+    while (!client.stop_thread && this->accept_new) {
         // Receive message from client
         ssize_t bytes_received =
             recv(client.client_socket, (in_buffer + msg_shift), (MAXLENGTH - msg_shift), 0);
         // Stop receiving when requested
-        if (client.stop_thread)
+        if (client.stop_thread || !this->accept_new)
             break;
 
-        // Check for number of received bytes
-        if (bytes_received <= 0) {
-            OutputClass::out_err_intern("Unexpected client disconnected");
-            session_end(client);
+        // Connection (socket) already closed - end
+        if (bytes_received <= 0)
             break;
-        }
 
         // Store response to string
         std::string recv_data((in_buffer + msg_shift), bytes_received);
@@ -599,6 +608,11 @@ std::vector<DataStruct> Server::handle_tcp_recv (ServerClient& client) {
                 // Check msg validity
                 if (!check_valid(retData))
                     throw std::logic_error("Invalid message provided");
+                // Fill client details from received AUTH message
+                if (retData.header.type == AUTH) {
+                    client.user_name = retData.user_name;
+                    client.display_name = retData.display_name;
+                }
                 // Add message to vector
                 ret_vec.push_back(retData);
             } catch (const std::logic_error& e) {
@@ -613,99 +627,96 @@ std::vector<DataStruct> Server::handle_tcp_recv (ServerClient& client) {
     return ret_vec;
 }
 /***********************************************************************************/
-void Server::handle_client (ServerClient& client) {
-    while (!client.stop_thread) {
-        // Begin sending (if any) (initially should be empty)
-        if (!client.msg_queue.empty())
-            send_data(client, client.msg_queue.front().first);
+void Server::handle_client (ServerClient client) {
+    while (!client.stop_thread && this->accept_new) {
         // Get (vector) of received message(s)
         std::vector<DataStruct> recv_msgs =
             ((client.con_type == UDP) ? handle_udp_recv(client) : handle_tcp_recv(client));
         // Stop receiving when requested
-        if (client.stop_thread)
+        if (client.stop_thread || !this->accept_new)
             break;
         // Process received messages
-        process_client(client, recv_msgs);
-    }
-}
+        // Iterate through received messages
+        for (auto msg : recv_msgs) {
+            // Log received message
+            OutputClass::out_recv_msg(client.sock_str, this->tcp_helper->get_msg_str(msg.header.type));
 
-void Server::process_client (ServerClient& client, std::vector<DataStruct> recv_msgs) {
-    // Iterate through received messages
-    for (auto msg : recv_msgs) {
-        // Log received message
-        OutputClass::out_recv_msg(client.sock_str, this->tcp_helper->get_msg_str(msg.header.type));
-
-        switch (client.state) {
-            case S_ACCEPT:
-                if (msg.header.type != AUTH) {
-                    // Unexpected, switch to error
-                    switch_to_error(client, "Unexpected message received");
-                    break;
-                }
-                // else handle AUTH message in S_AUTH state below
-            case S_AUTH:
-                switch (msg.header.type) {
-                    case AUTH:
-                        // Check if provided username is unique
-                        if (get_client(msg.user_name, this->clients) != this->clients.end())
-                            send_reply(client, msg.ref_msg_id, false, "Unique username already used");
-                        else { // Successful authentization
-                            send_reply(client, msg.ref_msg_id, true, "Welcome onboard!");
-                            // For TCP join user directly, for UDP wait for confirmation
-                            if (client.con_type == TCP) {
-                                // Fill client details from received AUTH message
-                                client.user_name = msg.user_name;
-                                client.display_name = msg.display_name;
-                                // Switch state
-                                client.state = S_OPEN;
-                                // Add user to default channel
-                                add_to_channel(DEFAULT_CHANNEL, client);
+            switch (client.state) {
+                case S_ACCEPT:
+                    if (msg.header.type != AUTH) {
+                        if (msg.header.type == BYE)
+                            session_end(client);
+                        else // Unexpected, user not yet authenticated, just send BYE and end
+                            switch_to_error(client, "Unexpected message received");
+                        break;
+                    }
+                    // else handle AUTH message in S_AUTH state below
+                case S_AUTH:
+                    switch (msg.header.type) {
+                        case AUTH:
+                            // Check if provided username is unique
+                            if (get_client(client.user_name, this->clients) != this->clients.end())
+                                send_reply(client, msg.ref_msg_id, false, "Unique username already used");
+                            else { // Successful authentization
+                                send_reply(client, msg.ref_msg_id, true, "Welcome onboard!");
+                                // Add user to server vector of clients
+                                this->clients.push_back(client);
+                                // For TCP join user directly, for UDP wait for confirmation
+                                if (client.con_type == TCP) {
+                                    // Fill client details from received AUTH message
+                                    client.user_name = msg.user_name;
+                                    client.display_name = msg.display_name;
+                                    // Switch state
+                                    client.state = S_OPEN;
+                                    // Add user to default channel
+                                    add_to_channel(DEFAULT_CHANNEL, client);
+                                }
                             }
-                        }
-                        break;
-                    case BYE:
-                        send_bye(client);
-                        break;
-                    default: // Unexpected, switch to error
-                        switch_to_error(client, "Unexpected message received");
-                        break;
-                }
-                break;
-            case S_OPEN:
-                switch (msg.header.type) {
-                    case MSG:
-                        // Update client display_name
-                        client.display_name = msg.display_name;
-                        // Broadcast the message to other channel members
-                        broadcast_msg(*(get_channel(client.client_channel)), std::string(client.display_name + " : " + msg.message), client.user_name);
-                        break;
-                    case JOIN:
-                        // Update user display name
-                        client.display_name = msg.display_name;
-                        // Notify client about succesful connection to channel
-                        send_reply(client, msg.ref_msg_id, true, std::string("Succesful join to " + msg.channel_id + " channel"));
-                        // Add user to requested channel (or create a new one)
-                        add_to_channel(msg.channel_id, client);
-                        break;
-                    case ERR:
-                        // Clear queue
-                        client.msg_queue = {};
-                        // Send bye
-                        send_bye(client);
-                        break;
-                    case BYE: // End connection
-                        session_end(client);
-                        return;
-                    default: // Unexpected, switch to error
-                        switch_to_error(client, "Unexpected message received");
-                        break;
-                }
-            case S_ERROR:
-            case S_END: // Ignore everything
-                break;
-            default: // Not expected state, output error
-                OutputClass::out_err_intern("Unknown current server state");
-                break;
+                            break;
+                        case BYE:
+                            send_bye(client);
+                            break;
+                        default: // Unexpected, switch to error
+                            switch_to_error(client, "Unexpected message received");
+                            break;
+                    }
+                    break;
+                case S_OPEN:
+                    switch (msg.header.type) {
+                        case MSG:
+                            // Update client display_name
+                            client.display_name = msg.display_name;
+                            // Broadcast the message to other channel members
+                            broadcast_msg(*(get_channel(client.client_channel)), msg.message, client.user_name);
+                            break;
+                        case JOIN:
+                            // Update user display name
+                            client.display_name = msg.display_name;
+                            // Notify client about succesful connection to channel
+                            send_reply(client, msg.ref_msg_id, true, std::string("Succesful join to " + msg.channel_id + " channel"));
+                            // Add user to requested channel (or create a new one)
+                            add_to_channel(msg.channel_id, client);
+                            break;
+                        case ERR:
+                            // Clear queue
+                            client.msg_queue = {};
+                            // Send bye
+                            send_bye(client);
+                            break;
+                        case BYE: // End connection
+                            session_end(client);
+                            break;
+                        default: // Unexpected, switch to error
+                            switch_to_error(client, "Unexpected message received");
+                            break;
+                    }
+                case S_ERROR:
+                case S_END: // Ignore everything
+                    break;
+                default: // Not expected state, output error
+                    OutputClass::out_err_intern("Unknown current server state");
+                    break;
+            }
         }
     }
 }

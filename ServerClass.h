@@ -58,6 +58,9 @@ class Server {
         UDPHelper* udp_helper;
         TCPHelper* tcp_helper;
 
+        // Protective mutexes
+        mutex send_mutex;
+
         // Decides whether accpet new clients or not
         bool accept_new;
 
@@ -74,15 +77,15 @@ class Server {
 
         // Clients managing
         void create_client (CON_TYPE type, int socket, struct sockaddr_in client_addr);
-        void remove_from_channel (ServerClient& ending_client);
-        void remove_client (ServerClient& ending_client);
+        void remove_from_channel (ServerClient ending_client);
+        void remove_client (ServerClient ending_client);
         // Channels managing
         ServerChannel create_channel (std::string channel_id);
         void add_to_channel (std::string channel_id, ServerClient& new_client);
         auto get_channel (std::string channel_id);
         auto get_client (std::string user_name, std::vector<ServerClient>& pool);
 
-        void bind_connection (CON_TYPE type);
+        void bind_connection (int socket);
         void accept_new_clients ();
         void session_end (ServerClient& ending_client);
 
@@ -101,8 +104,7 @@ class Server {
 
         std::vector<DataStruct> handle_udp_recv (ServerClient& client);
         std::vector<DataStruct> handle_tcp_recv (ServerClient& client);
-        void handle_client (ServerClient& client);
-        void process_client (ServerClient& client, std::vector<DataStruct> recv_msgs);
+        void handle_client (ServerClient client);
 
         // Helper methods
         Header create_header (uint8_t type, uint16_t& msg_id);
