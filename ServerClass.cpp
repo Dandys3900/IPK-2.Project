@@ -28,9 +28,6 @@ Server::Server (std::map<std::string, std::string> data_map)
 
     this->udp_helper = new UDPHelper();
     this->tcp_helper = new TCPHelper();
-
-    // Create default channel
-    (void)create_channel(DEFAULT_CHANNEL);
 }
 
 Server::~Server () {
@@ -38,16 +35,14 @@ Server::~Server () {
     delete this->tcp_helper;
 }
 /***********************************************************************************/
-void Server::create_client (CON_TYPE type, int socket, struct sockaddr_in client_addr) {
+ServerClient Server::create_client (CON_TYPE type, int socket, struct sockaddr_in client_addr) {
     // Create new client
-    ServerClient new_client = {
-        .con_type      = type,
-        .client_socket = socket,
-        .sock_str      = client_addr,
+    return (ServerClient) {
+        .con_type       = type,
+        .client_socket  = socket,
+        .sock_str       = client_addr,
         .processed_msgs = std::vector<uint16_t>()
     };
-    // Start client thread
-    this->client_threads.emplace_back(&Server::handle_client, this, new_client);
 }
 /***********************************************************************************/
 ServerChannel Server::create_channel (std::string channel_id) {
@@ -216,50 +211,71 @@ void Server::stop_server () {
 }
 /***********************************************************************************/
 void Server::accept_new_clients () {
-    fd_set read_fds;
-    int max_fd = std::max(this->main_udp_socket, this->main_tcp_socket);
+    std::vector<pollfd> fds(2);
+    // For monitoring TCP
+    fds[0].fd = this->main_tcp_socket;
+    fds[0].events = POLLIN;
+    // For monitoring UDP
+    fds[1].fd = this->main_udp_socket;
+    fds[1].events = POLLIN;
 
     while (this->accept_new) {
-        FD_ZERO(&read_fds);
-        // Set fds for both UDP and TCP sockets
-        FD_SET(this->main_udp_socket, &read_fds);
-        FD_SET(this->main_tcp_socket, &read_fds);
+        // Get active fd (if any)
+        int num_ready = poll(fds.data(), fds.size(), 150/*miliseconds*/);
 
-        // Set timeout to 150ms
-        struct timeval time = {
-            .tv_sec = 0,
-            .tv_usec = suseconds_t(150 * 1000)
-        };
-        // Use select to wait for activity on either socket
-        select(max_fd + 1, &read_fds, nullptr, nullptr, &time);
+        if (num_ready < 0) {
+            OutputClass::out_err_intern("Error in poll - exiting");
+            stop_server();
+            break;
+        }
+        // Timeout occurred
+        if (num_ready == 0)
+            continue;
 
         // Check if there's a new TCP client
-        if (FD_ISSET(this->main_tcp_socket, &read_fds)) {
+        if (fds[0].revents & POLLIN) {
             sockaddr_in client_addr;
             socklen_t client_len = sizeof(client_addr);
-
             // Try to accept new incoming client
             int client_socket = accept(this->main_tcp_socket, (struct sockaddr*)&client_addr, &client_len);
             if (client_socket < 0) {
-                if (this->accept_new)
-                    OutputClass::out_err_intern("Error while accepting TCP client");
+                OutputClass::out_err_intern("Error while accepting TCP client");
                 break;
             }
             // Create new client
-            create_client(TCP, client_socket, client_addr);
+            ServerClient new_client = create_client(TCP, client_socket, client_addr);
+            // Start client thread
+            this->client_threads.emplace_back(&Server::handle_client, this, new_client);
         }
 
         // Check if there's a new UDP client
-        /*if (FD_ISSET(this->main_udp_socket, &read_fds)) {
-            // Create new socket for UDP client
-            int client_socket;
-            if ((client_socket = socket(AF_INET, SOCK_DGRAM, 0)) <= 0) {
-                OutputClass::out_err_intern("Creation of UDP socket failed");
+        if (fds[1].revents & POLLIN) {
+            // Reset poll event
+            fds[1].revents = 0;
+            // Create new client - initially use server connection data
+            ServerClient new_client = create_client(UDP, this->main_udp_socket, this->server_addr);
+
+            // Receive this data
+            std::vector<DataStruct> msgs = handle_udp_recv(new_client);
+            // Get first (and only message (client shouldnt send other unless confirmed))
+            DataStruct msg = msgs.at(0);
+            if (msg.header.type != AUTH) {
+                OutputClass::out_err_intern("Invalid initial message received");
                 continue;
             }
-            // Create new client
-            create_client(UDP, client_socket, this->server_addr);
-        }*/
+            // Load client details from AUTH message
+            new_client.user_name = msg.user_name;
+            new_client.display_name = msg.display_name;
+
+            // Create new socket for client
+            if ((new_client.client_socket = socket(AF_INET, SOCK_DGRAM, 0)) <= 0) {
+                OutputClass::out_err_intern("Creation of new UDP socket failed");
+                continue;
+            }
+            handle_auth(new_client, msg);
+            // Start client thread
+            this->client_threads.emplace_back(&Server::handle_client, this, new_client);
+        }
     }
 }
 /***********************************************************************************/
@@ -357,7 +373,7 @@ void Server::send_confirm (ServerClient& to_client, uint16_t confirm_to_id) {
         .header = create_header(CONFIRM, to_client.msg_id),
         .ref_msg_id = confirm_to_id
     };
-    send_message(to_client, data);
+    send_data(to_client, data);
 }
 
 void Server::send_bye (ServerClient& to_client) {
@@ -506,7 +522,6 @@ std::vector<DataStruct> Server::handle_udp_recv (ServerClient& client) {
 
             // Get front message from queue
             auto& msg = client.msg_queue.front();
-
             // Check if matching ids
             if (msg.first.header.msg_id == retData.header.msg_id) {
                 // Confirmed BYE msg -> end connection
@@ -514,11 +529,8 @@ std::vector<DataStruct> Server::handle_udp_recv (ServerClient& client) {
                     session_end(client);
                     break;
                 }
-                // Confirmed AUTH msg -> join user to default channel
+                // Confirmed REPLY to initial AUTH message
                 if (client.state == S_AUTH) {
-                    // Fill client details from received AUTH message
-                    client.user_name = retData.user_name;
-                    client.display_name = retData.display_name;
                     // Switch state
                     client.state = S_OPEN;
                     // Add user to default channel
@@ -526,19 +538,11 @@ std::vector<DataStruct> Server::handle_udp_recv (ServerClient& client) {
                 }
                 // Remove confirmed message from queue
                 client.msg_queue.pop();
-                // Try to send another message from queue
-                if (client.msg_queue.empty())
-                    continue;
-                // Get front message from queue
-                auto& msg = client.msg_queue.front();
-                // Send
-                send_data(client, msg.first);
             }
             else
                 OutputClass::out_err_intern("Confirmation to unexpected message received");
             continue;
         }
-
         // Send confirmation to client
         send_confirm(client, retData.header.msg_id);
 
@@ -576,12 +580,12 @@ std::vector<DataStruct> Server::handle_tcp_recv (ServerClient& client) {
         // Receive message from client
         ssize_t bytes_received =
             recv(client.client_socket, (in_buffer + msg_shift), (MAXLENGTH - msg_shift), 0);
-        // Stop receiving when requested
-        if (client.stop_thread || !this->accept_new)
-            break;
-
         // Connection (socket) already closed - end
         if (bytes_received <= 0)
+            break;
+
+        // Stop receiving when requested
+        if (client.stop_thread || !this->accept_new)
             break;
 
         // Store response to string
@@ -627,6 +631,24 @@ std::vector<DataStruct> Server::handle_tcp_recv (ServerClient& client) {
     return ret_vec;
 }
 /***********************************************************************************/
+void Server::handle_auth (ServerClient& client, DataStruct auth_msg) {
+    // Check if provided username is unique
+    if (get_client(client.user_name, this->clients) != this->clients.end())
+        send_reply(client, auth_msg.ref_msg_id, false, "Unique username already used");
+    else { // Successful authentization
+        send_reply(client, auth_msg.ref_msg_id, true, "Welcome onboard!");
+        // Add user to server vector of clients
+        this->clients.push_back(client);
+        // For TCP join user directly, for UDP wait for confirmation
+        if (client.con_type == TCP) {
+            // Switch state
+            client.state = S_OPEN;
+            // Add user to default channel
+            add_to_channel(DEFAULT_CHANNEL, client);
+        }
+    }
+}
+/***********************************************************************************/
 void Server::handle_client (ServerClient client) {
     while (!client.stop_thread && this->accept_new) {
         // Get (vector) of received message(s)
@@ -635,43 +657,17 @@ void Server::handle_client (ServerClient client) {
         // Stop receiving when requested
         if (client.stop_thread || !this->accept_new)
             break;
-        // Process received messages
+
         // Iterate through received messages
         for (auto msg : recv_msgs) {
             // Log received message
             OutputClass::out_recv_msg(client.sock_str, this->tcp_helper->get_msg_str(msg.header.type));
 
             switch (client.state) {
-                case S_ACCEPT:
-                    if (msg.header.type != AUTH) {
-                        if (msg.header.type == BYE)
-                            session_end(client);
-                        else // Unexpected, user not yet authenticated, just send BYE and end
-                            switch_to_error(client, "Unexpected message received");
-                        break;
-                    }
-                    // else handle AUTH message in S_AUTH state below
                 case S_AUTH:
                     switch (msg.header.type) {
                         case AUTH:
-                            // Check if provided username is unique
-                            if (get_client(client.user_name, this->clients) != this->clients.end())
-                                send_reply(client, msg.ref_msg_id, false, "Unique username already used");
-                            else { // Successful authentization
-                                send_reply(client, msg.ref_msg_id, true, "Welcome onboard!");
-                                // Add user to server vector of clients
-                                this->clients.push_back(client);
-                                // For TCP join user directly, for UDP wait for confirmation
-                                if (client.con_type == TCP) {
-                                    // Fill client details from received AUTH message
-                                    client.user_name = msg.user_name;
-                                    client.display_name = msg.display_name;
-                                    // Switch state
-                                    client.state = S_OPEN;
-                                    // Add user to default channel
-                                    add_to_channel(DEFAULT_CHANNEL, client);
-                                }
-                            }
+                            handle_auth(client, msg);
                             break;
                         case BYE:
                             send_bye(client);

@@ -21,7 +21,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <condition_variable>
-#include <sys/select.h>
+#include <poll.h>
 
 #include "OutputClass.h"
 
@@ -48,8 +48,7 @@ enum MSG_TYPE : uint8_t {
 
 // Enum for client states
 enum FSM_STATE : uint8_t {
-    S_ACCEPT = 0,
-    S_AUTH,
+    S_AUTH = 0,
     S_OPEN,
     S_ERROR,
     S_END

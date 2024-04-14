@@ -20,7 +20,7 @@ typedef struct {
     std::string user_name    = "";
     std::string display_name = "";
     // Initial state
-    FSM_STATE state          = S_ACCEPT;
+    FSM_STATE state          = S_AUTH;
     // Storing client connection details
     struct sockaddr_in sock_str;
     // Vector storing all already processed messages by their IDs (UDP only)
@@ -60,6 +60,7 @@ class Server {
 
         // Protective mutexes
         mutex send_mutex;
+        mutex channels_mutex;
 
         // Decides whether accpet new clients or not
         bool accept_new;
@@ -76,7 +77,7 @@ class Server {
         std::vector<std::jthread> client_threads;
 
         // Clients managing
-        void create_client (CON_TYPE type, int socket, struct sockaddr_in client_addr);
+        ServerClient create_client (CON_TYPE type, int socket, struct sockaddr_in client_addr);
         void remove_from_channel (ServerClient ending_client);
         void remove_client (ServerClient ending_client);
         // Channels managing
@@ -104,6 +105,7 @@ class Server {
 
         std::vector<DataStruct> handle_udp_recv (ServerClient& client);
         std::vector<DataStruct> handle_tcp_recv (ServerClient& client);
+        void handle_auth (ServerClient& client, DataStruct auth_msg);
         void handle_client (ServerClient client);
 
         // Helper methods
