@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include <condition_variable>
 #include <poll.h>
+#include <atomic>
 
 #include "OutputClass.h"
 

@@ -20,7 +20,7 @@ typedef struct {
     std::string user_name    = "";
     std::string display_name = "";
     // Initial state
-    FSM_STATE state          = S_AUTH;
+    std::atomic<FSM_STATE> state = S_AUTH;
     // Storing client connection details
     struct sockaddr_in sock_str;
     // Vector storing all already processed messages by their IDs (UDP only)
@@ -30,15 +30,15 @@ typedef struct {
     // Represents queue with messages to be sent to client
     std::queue<std::pair<DataStruct, uint>> msg_queue = {};
     // Boolean for controlling and stopping client thread
-    bool stop_thread         = false;
+    std::atomic<bool> stop_thread = false;
     // Supporting thread for client
-    //std::jthread client_thread {};
+    mutex client_queue_mutex;
 } ServerClient;
 
 // Struct represeting server channels
 typedef struct {
     std::string channel_name = "";
-    std::vector<ServerClient> clients;
+    std::map<std::string, ServerClient*> clients;
 } ServerChannel;
 
 class Server {
@@ -61,6 +61,7 @@ class Server {
         // Protective mutexes
         mutex send_mutex;
         mutex channels_mutex;
+        mutex clients_mutex;
 
         // Decides whether accpet new clients or not
         bool accept_new;
@@ -68,45 +69,45 @@ class Server {
         // Notifies main that server ended and program can terminate
         condition_variable server_cond_var;
 
-        // Vectors for keeping track of all connected users and channels
-        std::vector<ServerChannel> channels;
-        std::vector<ServerClient> clients;
+        // Maps for keeping track of all connected users and channels
+        std::map<std::string, ServerChannel> channels;
+        std::map<std::string, ServerClient*> joined_clients;
+        // Map to store all TCP (unauthorized), yet used sockets
+        std::map<int, int> tcp_sockets;
 
         std::jthread accept_thread;
         // Vector representing jthread pool
         std::vector<std::jthread> client_threads;
 
         // Clients managing
-        ServerClient create_client (CON_TYPE type, int socket, struct sockaddr_in client_addr);
-        void remove_from_channel (ServerClient ending_client);
-        void remove_client (ServerClient ending_client);
+        ServerClient* create_client (CON_TYPE type, int socket, struct sockaddr_in client_addr);
+        void remove_from_channel (ServerClient* ending_client);
+        void remove_client (ServerClient* ending_client);
         // Channels managing
         ServerChannel create_channel (std::string channel_id);
-        void add_to_channel (std::string channel_id, ServerClient& new_client);
-        auto get_channel (std::string channel_id);
-        auto get_client (std::string user_name, std::vector<ServerClient>& pool);
+        void add_to_channel (std::string channel_id, ServerClient* new_client);
 
         void bind_connection (int socket);
         void accept_new_clients ();
-        void session_end (ServerClient& ending_client);
+        void session_end (ServerClient* ending_client);
 
         // Methods for sending messages to client(s)
         void broadcast_msg (ServerChannel& target, std::string msg, std::string sender);
-        void send_msg (ServerClient& to_client, std::string display_name, std::string msg);
-        void send_err (ServerClient& to_client, std::string err_msg);
-        void send_reply (ServerClient& to_client, uint16_t ref_id, bool result, std::string msg);
-        void send_confirm (ServerClient& to_client, uint16_t confirm_to_id);
-        void send_bye (ServerClient& to_client);
+        void send_msg (ServerClient* to_client, std::string display_name, std::string msg);
+        void send_err (ServerClient* to_client, std::string err_msg);
+        void send_reply (ServerClient* to_client, uint16_t ref_id, bool result, std::string msg);
+        void send_confirm (ServerClient* to_client, uint16_t confirm_to_id);
+        void send_bye (ServerClient* to_client);
 
-        void send_message (ServerClient& to_client, DataStruct& data);
-        void send_data (ServerClient& to_client, DataStruct& data);
+        void send_message (ServerClient* to_client, DataStruct& data);
+        void send_data (ServerClient* to_client, DataStruct& data);
 
-        void switch_to_error (ServerClient& to_client, std::string err_msg);
+        void switch_to_error (ServerClient* to_client, std::string err_msg);
 
-        std::vector<DataStruct> handle_udp_recv (ServerClient& client);
-        std::vector<DataStruct> handle_tcp_recv (ServerClient& client);
-        void handle_auth (ServerClient& client, DataStruct auth_msg);
-        void handle_client (ServerClient client);
+        std::vector<DataStruct> handle_udp_recv (ServerClient* client);
+        std::vector<DataStruct> handle_tcp_recv (ServerClient* client);
+        void handle_auth (ServerClient* client, DataStruct auth_msg);
+        void handle_client (ServerClient* client);
 
         // Helper methods
         Header create_header (uint8_t type, uint16_t& msg_id);

@@ -56,7 +56,6 @@ std::string TCPHelper::load_msg_part(size_t start_from, std::vector<std::string>
 }
 
 void TCPHelper::deserialize_msg(DataStruct& out_str, std::vector<std::string>& line_vec) {
-    out_str.header.type = get_msg_type(line_vec.at(0));
     switch (out_str.header.type) {
         // AUTH {Username} AS {DisplayName} USING {Secret}\r\n
         case AUTH:
