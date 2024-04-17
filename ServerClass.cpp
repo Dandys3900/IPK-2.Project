@@ -227,7 +227,7 @@ void Server::accept_new_clients () {
             break;
         }
         // Timeout occurred
-        if (num_ready == 0)
+        if (num_ready == 0 || !this->accept_new)
             continue;
 
         // Check if there's a new TCP client

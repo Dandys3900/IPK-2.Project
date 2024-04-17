@@ -111,236 +111,174 @@ Testování probíhalo v rámci hostujícího notebooku v prostředí Windows Su
 
 **Symbol `->` značí příchozí zprávu na server a symbol `<-` naopak značí odchozí zprávu z serveru ke klientovi**
 
-### Test chybějícího povinného argumenty programu
-* Popis testu: Uživatel vynechá povinný argument spouštění programu *-t*, pro specifikaci typu komunikačního protokolu
-* Důvody testování: Ověření schopnosti programu validovat uživatelské vstupy
-* Způsob testování: Uživatel argument během spouštění vynechá
-* Vstupy:
-    * `./ipk24chat-client -s 127.0.0.1 -p 4567`
-* Očekávaný výstup:
-    * `ERROR: Compulsory values are missing` společně s návratovou hodnotou != 0
-* Skutečný výstup:
-```
-┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-└─$ ./ipk24chat-client -s 127.0.0.1 -p 4567
-ERROR: Compulsory values are missing
-
-┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-└─$ echo $?
-1
-```
-
-### Test nevalidní hodnoty pro hostname
-* Popis testu: Uživatel zadá neexistující název serveru
-* Důvody testování: Ověření schopnosti programu validovat uživatelské vstupy
-* Způsob testování: Uživatel zadá špatnou hodnotu pro název serveru
-* Vstupy:
-    * `./ipk24chat-client -t udp -s NONSENSE -p 4567`
-    * `./ipk24chat-client -t tcp -s NONSENSE -p 4567`
-* Očekávaný výstup:
-    * `ERROR: Unknown or invalid hostname provided` společně s návratovou hodnotou != 0
-* Skutečný výstup:
-    * UDP:
-        ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t udp -s NONSENSE -p 4567
-        ERROR: Unknown or invalid hostname provided
-
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ echo $?
-        1
-        ```
-    * TCP:
-        ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t tcp -s NONSENSE -p 4567
-        ERROR: Unknown or invalid hostname provided
-
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ echo $?
-        1
-        ```
-
-### Test ukončení programu uživatelem kombinací `CTRL+c`
+### Test ukončení programu uživatelem kombinací `CTRL+c` - žádný připojený klient
 * Popis testu: Ověření reakce programu na interrupt signál vyvolaný uživatelem
 * Důvody testování: Požadováno dle zadání
 * Způsob testování: Uživatel na začátku běhu programu provede klávesovou zkratku `CTRL+c`
 * Očekávaný výstup:
-    * `BYE` zpráva zaslaná serveru a korektní ukončení programu s návratovou hodnotou rovnou 0
+    * Uvolnění veškeré alokované paměti a korektní ukončení programu s návratovou hodnotou rovnou 0
 * Skutečný výstup:
-    * UDP:
+    * Server:
         ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t udp -s 127.0.0.1 -p 4567
-        ^C                                                      -> \xff\x00\x00 [BYE Message]
-                                                                <- \x00\x00\x00 [CONFIRM Message]
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ echo $?
-        0
-        ```
-    * TCP:
-        ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t tcp -s 127.0.0.1 -p 4567
-        ^C                                                      -> BYE\r\n
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ echo $?
-        0
-        ```
+        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/2.Project]
+        └─$ valgrind ./ipk24chat-server -l 127.0.0.1 -p 4567
+        ==12368== Memcheck, a memory error detector
+        ==12368== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+        ==12368== Using Valgrind-3.20.0 and LibVEX; rerun with -h for copyright info
+        ==12368== Command: ./ipk24chat-server -l 127.0.0.1 -p 4567
+        ==12368==
+        ^C==12368==
+        ==12368== HEAP SUMMARY:
+        ==12368==     in use at exit: 0 bytes in 0 blocks
+        ==12368==   total heap usage: 39,967 allocs, 39,967 frees, 6,946,394 bytes allocated
+        ==12368==
+        ==12368== All heap blocks were freed -- no leaks are possible
+        ==12368==
+        ==12368== For lists of detected and suppressed errors, rerun with: -s
+        ==12368== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
-### Test ukončení programu uživatelem kombinací `CTRL+d`
-* Popis testu: Ověření reakce programu na interrupt signál vyvolaný uživatelem
-* Důvody testování: Požadováno dle zadání
-* Způsob testování: Uživatel na začátku běhu programu provede klávesovou zkratku `CTRL+d`
-* Očekávaný výstup:
-    * `BYE` zpráva zaslaná serveru a korektní ukončení programu s návratovou hodnotou rovnou 0
-* Skutečný výstup:
-    * UDP:
-        ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t udp -s 127.0.0.1 -p 4567
-                                                                -> \xff\x00\x00 [BYE Message]
-                                                                <- \x00\x00\x00 [CONFIRM Message]
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ echo $?
-        0
-        ```
-    * TCP:
-        ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t tcp -s 127.0.0.1 -p 4567
-                                                                -> BYE\r\n
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
+        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/2.Project]
         └─$ echo $?
         0
         ```
 
-### Test reakce na nedoručenou `REPLY` zprávu pro `AUTH` zprávu (**UDP Specific**)
-* Popis testu: Ověření, že klient korektně reaguje na nedodanou, ovšem vyžadovanou, `REPLY` zprávu
-* Důvody testování: Charakteristika UDP protokolu, jeden z možných edge-casů
-* Způsob testování: Testovací server [mockUDPserver.py][mockudp-file-ref] při reakci na přijatou `AUTH` nezašle klientem očekávanou `REPLY` zprávu
+### Test komunikace mezi uživateli
+* Popis testu: Ověření schopnosti programu zajistit připojeným klientům vzájemnou komunikaci
+* Důvody testování: Základní funkcionalita
+* Způsob testování: K serveru se připojí dva testovací klienti (jeden pomocí UDP a druhý pomocí TCP), následně dojde ke vzájemné výměně zpráv mezi těmito klienty.
 * Očekávaný výstup:
-    * Tisk chybové zprávy oznamující že server nereaguje a ukončení spojení ve formě zaslané `BYE` zprávy
+    * Viditelná vzájemná výměna zpráv mezi zůčastněnými stranami.
 * Skutečný výstup:
-    * UDP:
+    * Server:
         ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t udp -s 127.0.0.1 -p 4567
-        /auth tom tom tom                                       -> \x02\x00\x00tom\x00tom\x00tom\x00 [AUTH Message]
-                                                                <- \x00\x00\x00 [CONFIRM Message]
-        ERR: Timeout for server response, ending connection     -> \xff\x00\x01 [BYE Message]
-                                                                <- \x00\x00\x01 [CONFIRM Message]
+        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/2.Project]
+        └─$ ./ipk24chat-server -l 127.0.0.1 -p 4567
+        RECV: 127.0.0.1:33948 | AUTH                                          (příchozí AUTH od prvního klienta[TCP])
+        SENT: 127.0.0.1:33948 | REPLY                                         (REPLY zaslaná tomuto klientovi signalizující úspěšné připojení)
+        SENT: 127.0.0.1:33948 | MSG                                           (MSG všem klientům v default kanálu oznamující připojení nového člena)
+        RECV: 127.0.0.1:39198 | AUTH                                          (příchozí AUTH od druhého klienta[UDP])
+        SENT: 127.0.0.1:39198 | CONFIRM                                       (zaslání potvrzení přijetí druhému klientovi)
+        SENT: 127.0.0.1:39198 | REPLY                                         (REPLY zaslaná tomuto klientovi signalizující úspěšné připojení)
+        RECV: 127.0.0.1:39198 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
+        SENT: 127.0.0.1:39198 | MSG                                           (MSG všem klientům v default kanálu oznamující připojení nového člena)
+        SENT: 127.0.0.1:33948 | MSG                                           (--||--)
+        RECV: 127.0.0.1:39198 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
+        RECV: 127.0.0.1:39198 | MSG                                           (MSG od UDP klienta určená pro ostatní členy default kanálu)
+        SENT: 127.0.0.1:39198 | CONFIRM                                       (zaslání potvrzení přijetí UDP klientovi)
+        SENT: 127.0.0.1:33948 | MSG                                           (zaslání MSG od UDP klienta TCP klientovi (jediný další připojený))
+        RECV: 127.0.0.1:33948 | MSG                                           (MSG od TCP klienta určená pro ostatní členy default kanálu)
+        SENT: 127.0.0.1:39198 | MSG                                           (zaslání MSG od TCP klienta UDP klientovi (jediný další připojený))
+        RECV: 127.0.0.1:39198 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
         ```
 
-### Test reakce na negativní `REPLY` zprávu pro `AUTH` zprávu
-* Popis testu: Ověření a demonstrace chování klienta na negativní `REPLY` zprávu pro zaslanou `AUTH` zprávu
-* Důvody testování: Jedna z běžných situací, které v rámci užívání mohou nastat
-* Způsob testování: Uživatel zašle `AUTH` na kterou přijímá negativní `REPLY` odpověď
+### Test ukončení programu uživatelem kombinací `CTRL+c` - několik připojených klientů
+* Popis testu: Ověření reakce programu na interrupt signál vyvolaný uživatelem v momentě dvou připojených klientů
+* Důvody testování: Základní funkcionalita
+* Způsob testování: K serveru se připojí dva testovací klienti (jeden pomocí UDP a druhý pomocí TCP), následně uživatel provede klávesovou zkratku `CTRL+c`
 * Očekávaný výstup:
-    * Tisk přijaté `REPLY` zprávy, na kterou může uživatel reagovat několika způsoby:
-        * Ukončení spojení
-        * Opětovnému zaslání `AUTH` zprávy
+    * `BYE` zpráva zaslaná serverem oběma připojeným klientům, kdy server vyčká s ukončením do momentu, kdy mu UDP klient doručí `CONFIRM` zprávu. Poté následuje korektní ukončení programu s návratovou hodnotou rovnou 0
 * Skutečný výstup:
-    * UDP:
+    * Server:
         ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t udp -s 127.0.0.1 -p 4567
-        /auth tom tom tom                                       -> \x02\x00\x00tom\x00tom\x00tom\x00 [AUTH Message]
-                                                                <- \x00\x00\x00 [CONFIRM Message]
-                                                                <- \x01\x00\x00\x00\x00\x00nene\x00 [NEGATIVE REPLY]
-        Failure: nene                                           -> \x00\x00\x00 [CONFIRM Message]
-        -- MOZNOST PRO UZIVATELE ROZHODNOUT SE, CO DAL --
-        ```
-    * TCP:
-        ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t tcp -s 127.0.0.1 -p 4567
-        /auth tom tom tom                                       -> AUTH tom AS tom USING tom\r\n [AUTH Message]
-                                                                <- REPLY NOK IS nene\r\n [NEGATIVE REPLY]
-        Failure: nene
-        -- MOZNOST PRO UZIVATELE ROZHODNOUT SE, CO DAL --
+        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/2.Project]
+        └─$ ./ipk24chat-server -l 127.0.0.1 -p 4567
+        RECV: 127.0.0.1:46036 | AUTH                                          (příchozí AUTH od prvního klienta[TCP])
+        SENT: 127.0.0.1:46036 | REPLY                                         (REPLY zaslaná tomuto klientovi signalizující úspěšné připojení)
+        SENT: 127.0.0.1:46036 | MSG                                           (MSG všem klientům v default kanálu oznamující připojení nového člena)
+        RECV: 127.0.0.1:49914 | AUTH                                          (příchozí AUTH od druhého klienta[UDP])
+        SENT: 127.0.0.1:49914 | CONFIRM                                       (zaslání potvrzení přijetí druhému klientovi)
+        SENT: 127.0.0.1:49914 | REPLY                                         (REPLY zaslaná tomuto klientovi signalizující úspěšné připojení)
+        RECV: 127.0.0.1:49914 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
+        SENT: 127.0.0.1:49914 | MSG                                           (MSG všem klientům v default kanálu oznamující připojení nového člena)
+        SENT: 127.0.0.1:46036 | MSG                                           (--||--)
+        RECV: 127.0.0.1:49914 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
+        ^CSENT: 127.0.0.1:46036 | BYE                                         (zaslání BYE zprávy TCP klientovi)
+        SENT: 127.0.0.1:49914 | BYE                                           (zaslání BYE zprávy UDP klientovi)
+        RECV: 127.0.0.1:49914 | CONFIRM                                       (potvrzení přijetí ze strany klienta => ukončení programu)
+
+        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/2.Project]
+        └─$ echo $?
+        0
         ```
 
-### Test reakce na neočekávanou zprávu v `OPEN` stavu
-* Popis testu: Ověření reakce klienta na neočekávanou zprávu pro jeho aktuální stav
-* Důvody testování: Jedna z běžných situací, které v rámci užívání mohou nastat
-* Způsob testování: Klient úspěšně naváže spojení se serverem a přejde do `OPEN` stavu, ve kterém od serveru přijímá neočekávanou a tedy chybnou `AUTH` zprávu
-Očekávaný výstup:
-    * Tisk přijaté `REPLY` zprávy, následované výpisem chybové zprávy informující o přijetí zprávy nevalidní pro aktuální klientův stav a následné přepnutí do `ERROR` stavu, zaslání `BYE` a ukončení spojení
+### Test odpojení uživatele
+* Popis testu: Ověření reakce programu na odpojení klienta
+* Důvody testování: Základní funkcionalita
+* Způsob testování: K serveru se připojí dva testovací klienti (jeden pomocí UDP a druhý pomocí TCP), následně dojde k odpojení UDP uživatele.
+* Očekávaný výstup:
+    * Zbývající připojení klienti v rámci stejného kánalu obdrží od serveru zprávu oznamující odpojení klienta.
 * Skutečný výstup:
-    * UDP:
+    * Server:
         ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t udp -s 127.0.0.1 -p 4567
-        /auth tom tom tom                                       -> \x02\x00\x00tom\x00tom\x00tom\x00 [AUTH Message]
-                                                                <- \x00\x00\x00 [CONFIRM Message]
-                                                                <- \x01\x00\x00\x01\x00\x00jojo\x00 [POSITIVE REPLY]
-        Success: jojo                                           -> \x00\x00\x00 [CONFIRM Message]
-                                                                <- \x02\x00\x01tom\x00tom\x00tom\x00 [(Unexpected) AUTH Message]
-                                                                -> \x00\x00\x01 [CONFIRM Message]
-        ERR: Unexpected message received                        -> \xfe\x00\x01tom\x00Unexpected message received\x00 [ERROR Message]
-                                                                <- \x00\x00\x01 [CONFIRM Message]
-        ```
-    * TCP:
-        ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t tcp -s 127.0.0.1 -p 4567
-        /auth tom tom tom                                       -> AUTH tom AS tom USING tom\r\n [AUTH Message]
-                                                                <- REPLY OK IS jojo\r\n [POSITIVE REPLY]
-        Success: jojo                                           <- AUTH tom AS tom USING tom\r\n [AUTH Message]
-        ERR: Unexpected message received                        -> ERR FROM tom IS Unexpected message received\r\n [ERROR Message]
-                                                                -> BYE\r\n
+        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/2.Project]
+        └─$ ./ipk24chat-server -l 127.0.0.1 -p 4567
+        RECV: 127.0.0.1:44118 | AUTH                                          (příchozí AUTH od prvního klienta[TCP])
+        SENT: 127.0.0.1:44118 | REPLY                                         (REPLY zaslaná tomuto klientovi signalizující úspěšné připojení)
+        SENT: 127.0.0.1:44118 | MSG                                           (MSG všem klientům v default kanálu oznamující připojení nového člena)
+        RECV: 127.0.0.1:41173 | AUTH                                          (příchozí AUTH od druhého klienta[UDP])
+        SENT: 127.0.0.1:41173 | CONFIRM                                       (zaslání potvrzení přijetí druhému klientovi)
+        SENT: 127.0.0.1:41173 | REPLY                                         (REPLY zaslaná tomuto klientovi signalizující úspěšné připojení)
+        RECV: 127.0.0.1:41173 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
+        SENT: 127.0.0.1:41173 | MSG                                           (MSG všem klientům v default kanálu oznamující připojení nového člena)
+        SENT: 127.0.0.1:44118 | MSG                                           (--||--)
+        RECV: 127.0.0.1:41173 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
+        RECV: 127.0.0.1:41173 | BYE                                           (BYE zpráva signalizující serveru, že se tento klient odpojil)
+        SENT: 127.0.0.1:41173 | CONFIRM                                       (zaslání potvrzení přijetí končícímu klientovi)
+        SENT: 127.0.0.1:44118 | MSG                                           (MSG všem klientům v default kanálu oznamující odpojení UDP člena)
         ```
 
-### Test reakce na přijetí vícera zpráv najednou (**TCP Specific**)
-* Popis testu: Ověření, že je klient schopen rozeznat a zpracovat vícero zpráv obsažených v bufferu z funkce *recv()*
-* Důvody testování: Charakteristika TCP protokolu, jeden z možných edge-casů
-* Způsob testování: Testovací server [mockTCPserver.py][mocktcp-file-ref] při reakci na přijatou `AUTH` zprávu odešle klientovi zpět dvě zprávy `REPLY` a `MSG` v rámci jednoho zaslání
+### Test reakce na nedoručenou `BYE` zprávu pro `UDP` klienta
+* Popis testu: Ověření, že server korektně reaguje na nepřijatou `CONFIRM` zprávu od připojeného UDP klienta a pokouší se zprávu zaslat opakovaně
+* Důvody testování: Charakteristika chování u UDP klientů
+* Způsob testování: K serveru se připojí testovací UDP klient. Následně se tento klient odmlčí.
 * Očekávaný výstup:
-    * Tisk obou přijatých zpráv na standardní výstup
+    * Opakované zaslání požadované zprávy a následné označení klienta za neaktivního a ukončení spojení s ním.
 * Skutečný výstup:
-    * TCP:
+    * Server:
         ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t tcp -s 127.0.0.1 -p 4567
-        /auth tom tom tom                                       -> AUTH tom AS tom USING tom\r\n [AUTH Message]
-                                                                <- REPLY OK IS VSE JE OK\r\nMSG FROM tom IS ahoj svete\r\n [POSITIVE REPLY + MSG Message]
-        Success: VSE JE OK
-        tom: ahoj svete
+        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/2.Project]
+        └─$ ./ipk24chat-server -l 127.0.0.1 -p 4567
+        RECV: 127.0.0.1:56883 | AUTH                                          (příchozí AUTH od UDP klienta)
+        SENT: 127.0.0.1:56883 | CONFIRM                                       (zaslání potvrzení přijetí klientovi)
+        SENT: 127.0.0.1:56883 | REPLY                                         (REPLY zaslaná tomuto klientovi signalizující úspěšné připojení)
+        RECV: 127.0.0.1:56883 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
+        SENT: 127.0.0.1:56883 | MSG                                           (MSG všem klientům v default kanálu oznamující připojení nového člena)
+        RECV: 127.0.0.1:56883 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
+        ^CSENT: 127.0.0.1:56883 | BYE                                         (zaslání BYE zprávy UDP klientovi [server byl ukončen])
+        SENT: 127.0.0.1:56883 | BYE                                           (opětovné zaslání BYE, jelikož klient nepotvrdil přijetí na první pokus)
+        SENT: 127.0.0.1:56883 | BYE                                           (--||--)
+        SENT: 127.0.0.1:56883 | BYE                                           (--||--)
+        ERR: No response from client, ending connection                     (dosaženo vnitřní podmíky serveru a ukončení spojení s tímto klientem)
         ```
 
-### Test reakce na přijetí nekompletní zprávy (**TCP Specific**)
-* Popis testu: Částečně navazuje na předchozí test, ověření že klient detekuje nekompletní zprávu od serveru a počká na zaslání zbytku od serveru
-* Důvody testování: Charakteristika TCP protokolu, jeden z možných edge-casů
-* Způsob testování: Testovací server [mockTCPserver.py][mocktcp-file-ref] při reakci na přijatou `AUTH` zprávu odešle klientovi první část zprávy `REPLY` a po 2 sekundách zbylou část
+### Test připojení jednoho z uživatelů do nového kanálu
+* Popis testu: Ověření reakce programu na odpojení klienta z výchozího kanálu do nového kanálu
+* Důvody testování: Základní funkcionalita
+* Způsob testování: K serveru se připojí dva testovací klienti (jeden pomocí UDP a druhý pomocí TCP), následně dojde k odpojení TCP uživatele z výchozího kanálu do nového kanálu.
 * Očekávaný výstup:
-    * Tisk přijaté zprávy v jednom celku
+    * Zbývající připojení klienti v rámci stejného kánalu obdrží od serveru zprávu oznamující odpojení klienta.
 * Skutečný výstup:
-    * TCP:
+    * Server:
         ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t tcp -s 127.0.0.1 -p 4567
-        /auth tom tom tom                                       -> AUTH tom AS tom USING tom\r\n [AUTH Message]
-                                                                <- REPLY OK I
-                                                                ...wait 2 secs...
-                                                                <- S VSE JE OK\r\n
-        Success: VSE JE OK
-        ```
-
-### Test reakce na přijetí case-insensitive zprávy (**TCP Specific**)
-* Popis testu: Ověření že klient na přijaté zprávy pohlíží jako na case-insensitive
-* Důvody testování: Charakteristika TCP protokolu, jeden z možných edge-casů
-* Způsob testování: Testovací server [mockTCPserver.py][mocktcp-file-ref] při reakci na přijatou `AUTH` zprávu odešle klientovi `REPLY` zprávu s nahodilou kombinací velkých a malých písmen (`RePlY Ok iS VsE je OK\r\n`)
-* Očekávaný výstup:
-    * Tisk přijaté zprávy bez jakékoliv chybové zprávy
-* Skutečný výstup:
-    * TCP:
-        ```
-        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/1.Project]
-        └─$ ./ipk24chat-client -t tcp -s 127.0.0.1 -p 4567
-        /auth tom tom tom                                       -> AUTH tom AS tom USING tom\r\n [AUTH Message]
-                                                                <- RePlY Ok iS VsE je OK\r\n [POSITIVE REPLY Message]
-        Success: VsE je OK
+        ┌──(dandys㉿DandysComp)-[~/Dandys-Kingdom/IPK-Projects/2.Project]
+        └─$ ./ipk24chat-server -l 127.0.0.1 -p 4567
+        RECV: 127.0.0.1:59374 | AUTH                                          (příchozí AUTH od prvního klienta[TCP])
+        SENT: 127.0.0.1:59374 | REPLY                                         (REPLY zaslaná tomuto klientovi signalizující úspěšné připojení)
+        SENT: 127.0.0.1:59374 | MSG                                           (MSG všem klientům v default kanálu oznamující připojení nového člena)
+        RECV: 127.0.0.1:59067 | AUTH                                          (příchozí AUTH od druhého klienta[UDP])
+        SENT: 127.0.0.1:59067 | CONFIRM                                       (zaslání potvrzení přijetí druhému klientovi)
+        SENT: 127.0.0.1:59067 | REPLY                                         (REPLY zaslaná tomuto klientovi signalizující úspěšné připojení)
+        RECV: 127.0.0.1:59067 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
+        SENT: 127.0.0.1:59067 | MSG                                           (MSG všem klientům v default kanálu oznamující připojení nového člena)
+        SENT: 127.0.0.1:59374 | MSG                                           (--||--)
+        RECV: 127.0.0.1:59067 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
+        RECV: 127.0.0.1:59067 | JOIN                                          (JOIN zpráva signalizující žádost UDP klienta o připojení do nového kanálu)
+        SENT: 127.0.0.1:59067 | CONFIRM                                       (zaslání potvrzení přijetí UDP klientovi)
+        SENT: 127.0.0.1:59067 | REPLY                                         (REPLY zaslaná tomuto klientovi signalizující úspěšné připojení do nového kanálu)
+        SENT: 127.0.0.1:59374 | MSG                                           (MSG zpráva zbylému TCP klientu v default kanálu oznamující odpojení UDP klienta z tohoto kanálu)
+        RECV: 127.0.0.1:59067 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
+        SENT: 127.0.0.1:59067 | MSG                                           (MSG všem klientům v kanálu, kam se právě připojil UDP klient oznamující jeho připojení)
+        RECV: 127.0.0.1:59067 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
         ```
 
 ## Rozšíření <a name="bonus"></a>

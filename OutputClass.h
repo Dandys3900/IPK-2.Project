@@ -25,11 +25,11 @@ class OutputClass {
         }
         // Output received message from client
         static void out_recv_msg (struct sockaddr_in& sock, std::string msg_type) {
-            cout << string("RECV: " + get_ip_str(sock) + ":" + get_port_str(sock) + "|" + msg_type) << endl;
+            cout << string("RECV: " + get_ip_str(sock) + ":" + get_port_str(sock) + " | " + msg_type) << endl;
         }
         // Output sent message to client
         static void out_send_msg (struct sockaddr_in& sock, std::string msg_type) {
-            cout << string("SENT: " + get_ip_str(sock) + ":" + get_port_str(sock) + "|" + msg_type) << endl;
+            cout << string("SENT: " + get_ip_str(sock) + ":" + get_port_str(sock) + " | " + msg_type) << endl;
         }
         // Output help about how to run the program
         static void out_help () {
