@@ -72,8 +72,7 @@ class Server {
         // Maps for keeping track of all connected users and channels
         std::map<std::string, ServerChannel> channels;
         std::map<std::string, ServerClient*> joined_clients;
-        // Map to store all TCP (unauthorized), yet used sockets
-        std::map<int, int> tcp_sockets;
+        std::vector<ServerClient*> created_clients;
 
         std::jthread accept_thread;
         // Vector representing jthread pool
@@ -113,6 +112,8 @@ class Server {
         Header create_header (uint8_t type, uint16_t& msg_id);
         bool check_valid (DataStruct& data);
         void set_socket_timeout (int socket_id, uint16_t timeout);
+        void clear_client_queue (ServerClient* client);
+        void close_client_socket (ServerClient* ending_client);
 
     public:
         Server (std::map<std::string, std::string> data_map);

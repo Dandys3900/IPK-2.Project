@@ -10,7 +10,7 @@ Server::Server (std::map<std::string, std::string> data_map)
       accept_new       (true),
       channels         (),
       joined_clients   (),
-      tcp_sockets      (),
+      created_clients  (),
       client_threads   ()
 {
     std::map<std::string, std::string>::iterator iter;
@@ -38,13 +38,17 @@ Server::~Server () {
 /***********************************************************************************/
 ServerClient* Server::create_client (CON_TYPE type, int socket, struct sockaddr_in client_addr) {
     // Create new client (on the heap)
-    return new (ServerClient) {
+    ServerClient* new_client = new (ServerClient) {
         .con_type           = type,
         .client_socket      = socket,
         .sock_str           = client_addr,
         .processed_msgs     = std::vector<uint16_t>(),
         .client_queue_mutex = mutex()
     };
+    // Store it for release once server stops
+    this->created_clients.push_back(new_client);
+    // Return constructed client
+    return new_client;
 }
 /***********************************************************************************/
 ServerChannel Server::create_channel (std::string channel_id) {
@@ -79,9 +83,6 @@ void Server::remove_client (ServerClient* ending_client) {
     }
     // Remove from (any) channel client was in
     remove_from_channel(ending_client);
-    // Release client when server is still running, otherwise stop_server() will handle it
-    if (this->accept_new)
-        delete ending_client;
 }
 
 void Server::add_to_channel (std::string channel_id, ServerClient* new_client) {
@@ -115,11 +116,8 @@ void Server::add_to_channel (std::string channel_id, ServerClient* new_client) {
 void Server::session_end (ServerClient* ending_client) {
     // Stop client thread
     ending_client->stop_thread = true;
-    // Close user socket
-    if (ending_client->con_type == UDP)
-        this->udp_helper->session_end(ending_client->client_socket);
-    else // TCP
-        this->tcp_helper->session_end(ending_client->client_socket);
+    // Close client socket
+    close_client_socket(ending_client);
     // Remove client
     remove_client(ending_client);
 }
@@ -169,31 +167,34 @@ void Server::start_server () {
 void Server::stop_server () {
     // Clear channels
     this->channels.clear();
-    std::map<std::string, ServerClient*> clients_copy;
-    {   std::lock_guard<std::mutex> lock(this->clients_mutex);
-        // Make copy of original clients map
-        clients_copy = this->joined_clients;
-    }
     // Stop accepting new clients
     this->accept_new = false;
+    // Create copy of joined clients map
+    std::map<std::string, ServerClient*> joined_clients_copy;
+    {   std::lock_guard<std::mutex> lock(this->clients_mutex);
+        joined_clients_copy = this->joined_clients;
+    }
 
     // Distribute BYE message to all connected clients when stopping the server
-    for (auto client : clients_copy) {
-        {   std::lock_guard<std::mutex> lock(client.second->client_queue_mutex);
-            // Clear clients queue
-            client.second->msg_queue = {};
+    for (auto client : this->created_clients) {
+        // Notify and end connection for currently joined clients
+        if (joined_clients_copy.find(client->user_name) != joined_clients_copy.end() &&
+            joined_clients_copy.at(client->user_name) == client) {
+            clear_client_queue(client);
+            send_bye(client);
         }
-        send_bye(client.second);
+        else { // Client not joined, just close its socket
+            client->stop_thread = true;
+            close_client_socket(client);
+        }
     }
-    // Close all potencially hanging TCP clients
-    for (auto open_tcp_socket : this->tcp_sockets)
-        this->tcp_helper->session_end(open_tcp_socket.second);
     // Wait for all clients threads to finish
-    for (auto& thread : this->client_threads)
+    for (auto& thread : this->client_threads) {
         thread.join();
-    // Now when all threads are released, release current clients
-    for (auto client : clients_copy)
-        delete client.second;
+    }
+    // Release all clients created during runtime
+    for (auto client : this->created_clients)
+        delete client;
 
     //************* UDP Connection *************//
     close(this->main_udp_socket);
@@ -239,8 +240,6 @@ void Server::accept_new_clients () {
                 OutputClass::out_err_intern("Error while accepting TCP client");
                 continue;
             }
-            // Store this socket
-            this->tcp_sockets.insert({client_socket, client_socket});
             // Create new client
             ServerClient* new_client = create_client(TCP, client_socket, client_addr);
 
@@ -296,6 +295,25 @@ void Server::set_socket_timeout (int socket_id, uint16_t timeout) {
     // Set timeout for created socket
     if (setsockopt(socket_id, SOL_SOCKET, SO_RCVTIMEO, (char*)&(time), sizeof(struct timeval)) < 0)
         throw std::logic_error("Setting timeout failed");
+}
+/***********************************************************************************/
+void Server::clear_client_queue (ServerClient* client) {
+    std::lock_guard<std::mutex> lock(client->client_queue_mutex);
+    // Clear the queue
+    client->msg_queue = {};
+}
+/***********************************************************************************/
+void Server::close_client_socket (ServerClient* ending_client) {
+    // Socket already closed -> return
+    if (ending_client->client_socket < 0)
+        return;
+    // Close user socket
+    if (ending_client->con_type == UDP)
+        this->udp_helper->session_end(ending_client->client_socket);
+    else // TCP
+        this->tcp_helper->session_end(ending_client->client_socket);
+    // Mark this socket as closed
+    ending_client->client_socket = -1;
 }
 /***********************************************************************************/
 void Server::broadcast_msg (ServerChannel& target, std::string msg, std::string sender) {
@@ -457,10 +475,7 @@ void Server::send_data (ServerClient* to_client, DataStruct& data) {
 void Server::switch_to_error (ServerClient* to_client, std::string err_msg) {
     // Notify user
     OutputClass::out_err_intern(err_msg);
-    {   std::lock_guard<std::mutex> lock(to_client->client_queue_mutex);
-        // Clear the queue
-        to_client->msg_queue = {};
-    }
+    clear_client_queue(to_client);
     // Change state - switch to error state
     to_client->state = S_ERROR;
     // Notify client
@@ -511,7 +526,7 @@ std::vector<DataStruct> Server::handle_udp_recv (ServerClient* client) {
                 }
             }
             else if (bytes_received < 0) // Output error
-                OutputClass::out_err_intern("Error while receiving data from server");
+                OutputClass::out_err_intern("Error while receiving data from client");
             else // 0 <= size < 3 -> send ERR, BYE and end connection
                 switch_to_error(client, "Unsufficient lenght of message received");
             // No reason for processing unsufficient-size response, repeat
@@ -658,9 +673,6 @@ std::vector<DataStruct> Server::handle_tcp_recv (ServerClient* client) {
     // Return final vector of received messages
     return ret_vec;
 }
-/*
-    TODO: uvolneni pameti pro tcp + udp udela failed auth a potom server se pokusi skoncit, ale nejde to a leak
-*/
 /***********************************************************************************/
 void Server::handle_auth (ServerClient* client, DataStruct auth_msg) {
     bool username_taken = false;
@@ -668,11 +680,8 @@ void Server::handle_auth (ServerClient* client, DataStruct auth_msg) {
         // Check if provided username is unique
         username_taken = this->joined_clients.contains(client->user_name);
         // If client is using unique name -> add user to server vector of clients
-        if (!username_taken) {
+        if (!username_taken)
             this->joined_clients.insert({client->user_name, client});
-            // Also remove this socket from map as will be closed when removing client
-            this->tcp_sockets.erase(client->client_socket);
-        }
     }
     // Based on provided username, send REPLY and process further
     if (username_taken)
@@ -740,10 +749,7 @@ void Server::handle_client (ServerClient* client) {
                             add_to_channel(msg.channel_id, client);
                             break;
                         case ERR:
-                            {   std::lock_guard<std::mutex> lock(client->client_queue_mutex);
-                                // Clear queue
-                                client->msg_queue = {};
-                            }
+                            clear_client_queue(client);
                             // Send bye
                             send_bye(client);
                             break;
