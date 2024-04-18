@@ -86,6 +86,8 @@ void Server::stop_server () {
 }
 ```
 
+Moje implementace v současné době podporuje pouze jedno autentizované spojení na jednoho klienta. Důvodem není ani tak usnadnění implementace, jako spíše bezpečnostní aspekt. Jelikož v současném stavu věcí je veškerá komunikace mezi klientem a serverem nešifrovaná a tudíž nezabezpečená, mohlo by ze strany útočníka dojít k tzv. reply útoku, kdy by útočník zachytil `secret` hodnotu (v tomto kontextu heslo) skutečného uživatele z jeho `AUTH` zprávy a to následně mohl použít a vydávat se za onoho uživatele.
+
 ## Testování <a name="test"></a>
 ### Testovací prostředí
 Uskutečnění níže popsaných testů probíhalo v domácím prostředí v rámci lokální sítě `WLAN`, prostřednictvím internetového protokolu `IPv4`. V době testování se v síti nacházely dva následující aktivní síťové prvky:
