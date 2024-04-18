@@ -20,9 +20,9 @@
 V této sekci se zaměřím na základní popis teorie potřebné k ilustraci a pochopení mechanismů implementovaných v rámci tohoto projektu.
 Vzhledem k tomu, že tento projekt do velké míry navazuje na projekt první ([chat klient](https://git.fit.vutbr.cz/xdanie14/IPK-1.Project)), bude zde sekce věnovaná teorii velmi stručná. To stěžejní, tedy popis použitých protokolů UDP a TCP můžete nalézt v sekci [teorie prvního projektu](https://git.fit.vutbr.cz/xdanie14/IPK-1.Project#teorie) a pro tento projekt se žádným způsobem neměnila.
 
-Jak jsem již zmiňoval, tento projekt rozširuje projekt první tím, že implementuje opačnou stranu, tedy stranu serveru. Základním rysem a požadavkem na tento server byla podpora připojení několika klientů zároveň a umožnění vzájemné komunikace mezi nimi, nehledě na transportní protokol, který používají (UDP/TCP). Proto jsem se rozhodl, stejně jako u prvního projektu, zvolit multi-vláknový přístup, tedy že každého připojeného klienta spravuje samostatné vlákno (nikoliv proces).
+Jak jsem již zmiňoval, tento projekt rozširuje první projekt tím, že implementuje opačnou stranu, tedy stranu serveru. Základním rysem a požadavkem na tento server byla podpora připojení několika klientů zároveň a umožnění vzájemné komunikace mezi nimi, nehledě na transportní protokol, které používají (UDP/TCP). Proto jsem se rozhodl, stejně jako u prvního projektu, zvolit multivláknový přístup, tedy že každého připojeného klienta spravuje samostatné vlákno (nikoliv proces).
 
-Rozdíl mezi vláknem a procesem je, že vlákna sdílí jeden a ten samý adresní prostor v rámci programu, stejně tak i další systémové prostředky. Zatímco proces je už samotná spuštěná instance programu. Tedy můžeme spustit více vláken v jednom procesu.
+Rozdíl mezi vláknem a procesem je, že vlákna sdílí jeden a ten samý adresní prostor v rámci programu, stejně jako i další systémové prostředky. Zatímco proces je už samotná spuštěná instance programu. Tedy můžeme spustit více vláken v jednom procesu.
 
 ## Struktura a implementace programu <a name="struct"></a>
 Program je logicky členěn na jednotlivé soubory a funkce/metody v rámci souborů.
@@ -41,14 +41,14 @@ for (int index = 1; index < argc; ++index) {
 }
 ```
 
-Následuje tvorba instance samotného komunikačního serveru, který je uložen do globálního ukazatele typu `Server`, zobrazeno zde:
+Následuje tvorba instance samotného komunikačního serveru, který je uložen do globálního ukazatele `server` typu `Server`, zobrazeno zde:
 ```
 // Create Server class instance
 Server server_inst(data_map);
 server = &server_inst;
 ```
 
-K běhovým chybám je přistupováno dvojím způsobem. Pro případ nefatálních chyb nebo chyb, které nemají vliv na fungování programu je realizován výpis obsahu chyby na standardní chybový výstup. Toto je realizováno statickou třídou [OutputClass][output-file-ref], která zároveň slouží také pro výpis zpráv přijatých a odeslaných od/na klienta/y. Řešení závažnějších chyb je realizováno pomocí vyvolání výjimek.
+K běhovým chybám je přistupováno dvojím způsobem. Pro případ nefatálních chyb nebo chyb, které nemají vliv na fungování programu, je realizován výpis obsahu chyby na standardní chybový výstup. Toto je realizováno statickou třídou [OutputClass][output-file-ref], která zároveň slouží také pro výpis zpráv přijatých a odeslaných od/na klienta/y. Řešení závažnějších chyb je realizováno pomocí vyvolání výjimek.
 
 Příklad zpracování takové výjimky v [hlavním souboru][main-file-ref] při spouštění serveru:
 ```
@@ -61,7 +61,7 @@ try {
 }
 ```
 
-Po úspěšném vytvoření socketů pro oba podporované protokoly (UDP/TCP) v rámci procedury `start_server()` dochází v vytvoření pomocného [jthread](https://en.cppreference.com/w/cpp/thread/jthread) vlákna, představeného v rámci standardu C++20. Jmenovitě se jedná o vlákno `accept_thread` deklarované v rámci třídy `Server`. Toto vlákno se stará o přijimání nových klientů, kteří mají zájem služby serveru využít.
+Po úspěšném vytvoření socketů pro oba podporované protokoly (UDP/TCP) v rámci procedury `start_server()`, dochází v vytvoření pomocného [jthread](https://en.cppreference.com/w/cpp/thread/jthread) vlákna, představeného v rámci standardu C++20. Jmenovitě se jedná o vlákno `accept_thread` deklarované v rámci třídy `Server`. Toto vlákno se stará o přijimání nových klientů, kteří mají zájem služby serveru využít.
 
 Určitou výzvu při implementaci představovalo zajištění mezivláknové synchronizace a zabránění konfliktů při čtení a zápisu do vnitřních attributů třídy a struktury `ServerClient`, která reprezentuje právě jedno připojeného klienta. Zejména pak fronty zpráv čekající na odeslání `msg_queue`, separátní pro každého připojeného klienta. Pro zajištění tohoto jsou v programu použity [mutexy](https://en.cppreference.com/w/cpp/thread/mutex), [podmínečné proměnné](https://en.cppreference.com/w/cpp/thread/condition_variable) (anglicky conditional variables) a [atomické proměnné](https://en.cppreference.com/w/cpp/atomic/atomic).
 
@@ -69,9 +69,9 @@ Po úspěšném spuštění serveru a připojení klientů, je chování serveru
 
 Možností pro ukončení spojení serveru s klientem je několik:
 1. Uživatel se rozhodne ukončit program (server) zasláním interrupt signálu (`CTRL+c`), kdy dojde k odpojení všech právě připojených klientů
-2. Server podle své vnitřní logiky rozhodne u ukončení spojeni (vyvolání metody *session_end(...);*) s argumentem ve formě ukazatele na konkrétního uživatele
+2. Server podle své vnitřní logiky rozhodne u ukončení spojení s daným klientem (vyvolání metody *session_end(...);*) s argumentem ve formě ukazatele na konkrétního uživatele
 3. Server obdrží od klienta `BYE` zprávu
-4. **(TCP Specific)** Klient uzavře navázané spojení ještě před úspěšnou autentizací
+4. **(TCP Specific)** Klient uzavře navázané spojení (socket) ještě před úspěšnou autentizací
 
 Určitou výzvu pro výše zmíněné představovala skutečnost, že jedinou možností pro ukončení celého serveru je zaslání interrupt signálu (`CTRL+c`) ze strany uživatele. Tento signál je ovšem přijat a zpracováván v hlavním souboru [main.cpp][main-file-ref], kde metoda třídy `Server`, `stop_server()`, která je při tomto signálu z hlavního souboru vyvolána, po plošném zaslání `BYE` zpráv všem připojeným uživatelů čeká až všechny klientská vlákna dokončí svůj běh a až poté je celý program ukončen.
 
@@ -105,11 +105,9 @@ V případě notebooku se jednalo o [Samsung Galaxy Book2 Pro 360](https://www.s
     * **DHCP Enabled:**    Yes
 
 #### Testovací prostředí
-Testování probíhalo v rámci hostujícího notebooku v prostředí Windows Subsystem for Linux (`WSL`), ve které byla spuštěna Linuxová distribuce **Kali Linux** (*Release:* 2023.4; *Codename:* kali-rolling). Pro simulování druhého účastníka komunikace, tedy klienta, posloužil implementovný klient z první úlohy.
+Testování probíhalo v rámci hostujícího notebooku v prostředí Windows Subsystem for Linux (`WSL`), ve kterém byla spuštěna Linuxová distribuce **Kali Linux** (*Release:* 2023.4; *Codename:* kali-rolling). Pro simulování druhého účastníka komunikace, tedy klienta, posloužil implementovaný klient z první úlohy.
 
 **Pokud nebude v rámci jednotlivých testů uvedeno jinak, je za testovací prostředí implicitně považováno výše uvedené prostředí.**
-
-**Symbol `->` značí příchozí zprávu na server a symbol `<-` naopak značí odchozí zprávu z serveru ke klientovi**
 
 ### Test ukončení programu uživatelem kombinací `CTRL+c` - žádný připojený klient
 * Popis testu: Ověření reakce programu na interrupt signál vyvolaný uživatelem
@@ -174,7 +172,7 @@ Testování probíhalo v rámci hostujícího notebooku v prostředí Windows Su
 ### Test ukončení programu uživatelem kombinací `CTRL+c` - několik připojených klientů
 * Popis testu: Ověření reakce programu na interrupt signál vyvolaný uživatelem v momentě dvou připojených klientů
 * Důvody testování: Základní funkcionalita
-* Způsob testování: K serveru se připojí dva testovací klienti (jeden pomocí UDP a druhý pomocí TCP), následně uživatel provede klávesovou zkratku `CTRL+c`
+* Způsob testování: K serveru se připojí dva testovací klienti (jeden pomocí UDP a druhý pomocí TCP), následně uživatel serveru provede klávesovou zkratku `CTRL+c`
 * Očekávaný výstup:
     * `BYE` zpráva zaslaná serverem oběma připojeným klientům, kdy server vyčká s ukončením do momentu, kdy mu UDP klient doručí `CONFIRM` zprávu. Poté následuje korektní ukončení programu s návratovou hodnotou rovnou 0
 * Skutečný výstup:
@@ -206,7 +204,7 @@ Testování probíhalo v rámci hostujícího notebooku v prostředí Windows Su
 * Důvody testování: Základní funkcionalita
 * Způsob testování: K serveru se připojí dva testovací klienti (jeden pomocí UDP a druhý pomocí TCP), následně dojde k odpojení UDP uživatele.
 * Očekávaný výstup:
-    * Zbývající připojení klienti v rámci stejného kánalu obdrží od serveru zprávu oznamující odpojení klienta.
+    * Zbývající připojení klienti v rámci stejného kánalu obdrží od serveru zprávu oznamující odpojení UDP klienta.
 * Skutečný výstup:
     * Server:
         ```
@@ -224,7 +222,7 @@ Testování probíhalo v rámci hostujícího notebooku v prostředí Windows Su
         RECV: 127.0.0.1:41173 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
         RECV: 127.0.0.1:41173 | BYE                                           (BYE zpráva signalizující serveru, že se tento klient odpojil)
         SENT: 127.0.0.1:41173 | CONFIRM                                       (zaslání potvrzení přijetí končícímu klientovi)
-        SENT: 127.0.0.1:44118 | MSG                                           (MSG všem klientům v default kanálu oznamující odpojení UDP člena)
+        SENT: 127.0.0.1:44118 | MSG                                           (MSG všem klientům v default kanálu oznamující odpojení UDP člena (TCP klient je jediný další připojený))
         ```
 
 ### Test reakce na nedoručenou `BYE` zprávu pro `UDP` klienta
@@ -252,9 +250,9 @@ Testování probíhalo v rámci hostujícího notebooku v prostředí Windows Su
         ```
 
 ### Test připojení jednoho z uživatelů do nového kanálu
-* Popis testu: Ověření reakce programu na odpojení klienta z výchozího kanálu do nového kanálu
+* Popis testu: Ověření reakce programu na odpojení klienta z výchozího kanálu a připojení do nového kanálu
 * Důvody testování: Základní funkcionalita
-* Způsob testování: K serveru se připojí dva testovací klienti (jeden pomocí UDP a druhý pomocí TCP), následně dojde k odpojení TCP uživatele z výchozího kanálu do nového kanálu.
+* Způsob testování: K serveru se připojí dva testovací klienti (jeden pomocí UDP a druhý pomocí TCP), následně dojde k odpojení TCP uživatele z výchozího kanálu a připojení do nového kanálu.
 * Očekávaný výstup:
     * Zbývající připojení klienti v rámci stejného kánalu obdrží od serveru zprávu oznamující odpojení klienta.
 * Skutečný výstup:
@@ -277,7 +275,7 @@ Testování probíhalo v rámci hostujícího notebooku v prostředí Windows Su
         SENT: 127.0.0.1:59067 | REPLY                                         (REPLY zaslaná tomuto klientovi signalizující úspěšné připojení do nového kanálu)
         SENT: 127.0.0.1:59374 | MSG                                           (MSG zpráva zbylému TCP klientu v default kanálu oznamující odpojení UDP klienta z tohoto kanálu)
         RECV: 127.0.0.1:59067 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
-        SENT: 127.0.0.1:59067 | MSG                                           (MSG všem klientům v kanálu, kam se právě připojil UDP klient oznamující jeho připojení)
+        SENT: 127.0.0.1:59067 | MSG                                           (MSG všem klientům v kanálu, kam se právě připojil UDP klient, oznamující jeho připojení)
         RECV: 127.0.0.1:59067 | CONFIRM                                       (potvrzení přijetí ze strany klienta)
         ```
 
