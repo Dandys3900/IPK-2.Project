@@ -685,9 +685,9 @@ void Server::handle_auth (ServerClient* client, DataStruct auth_msg) {
     }
     // Based on provided username, send REPLY and process further
     if (username_taken)
-        send_reply(client, auth_msg.ref_msg_id, false, "Unique username already used");
+        send_reply(client, auth_msg.header.msg_id, false, "Unique username already used");
     else { // Successful authentization
-        send_reply(client, auth_msg.ref_msg_id, true, "Welcome onboard!");
+        send_reply(client, auth_msg.header.msg_id, true, "Welcome onboard!");
         // For TCP join user directly, for UDP wait for confirmation
         if (client->con_type == TCP) {
             // Switch state
@@ -744,7 +744,7 @@ void Server::handle_client (ServerClient* client) {
                             // Update user display name
                             client->display_name = msg.display_name;
                             // Notify client about succesful connection to channel
-                            send_reply(client, msg.ref_msg_id, true, std::string("Succesful join to " + msg.channel_id + " channel"));
+                            send_reply(client, msg.header.msg_id, true, std::string("Succesful join to " + msg.channel_id + " channel"));
                             // Add user to requested channel (or create a new one)
                             add_to_channel(msg.channel_id, client);
                             break;
